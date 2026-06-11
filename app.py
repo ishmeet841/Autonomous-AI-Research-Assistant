@@ -287,26 +287,23 @@ def generate_overview(topic: str, results: list[dict], backend: dict) -> str:
         )
 
     combined = "\n".join(summaries)
-    synthesis_input = (
-        f"Research topic: {topic}\n\n"
-        "Summaries from retrieved academic papers:\n"
-        f"{combined[:3500]}"
-    )
+    
+    if backend["summarizer"] is None:
+        return " ".join(summaries[:2])
 
     try:
         synthesis = backend["summarizer"](
-            synthesis_input,
+            f"summarize: {combined[:1000]}",
             max_length=220,
             min_length=60,
-            do_sample=False,
         )
-        overview = synthesis[0].get("summary_text", "").strip()
+        overview = synthesis[0].get("generated_text", "").strip()
         if overview:
             return overview
     except Exception:
         pass
 
-    return " ".join(summaries[:3])
+    return " ".join(summaries[:2])
 
 
 def build_report(
