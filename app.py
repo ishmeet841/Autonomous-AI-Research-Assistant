@@ -539,13 +539,26 @@ def main() -> None:
         
         st.divider()
         st.header("⚙️ Audio Settings")
-        enable_audio = st.checkbox("Enable Audio Features", value=False)
-        if enable_audio:
-            speech_rate = st.slider("Speech Rate (WPM)", min_value=50, max_value=300, value=150)
-            speech_volume = st.slider("Volume", min_value=0.0, max_value=1.0, value=0.9, step=0.1)
+        # Check if audio libraries are available
+        try:
+            import speech_recognition
+            audio_available = True
+        except ImportError:
+            audio_available = False
+        
+        if audio_available:
+            enable_audio = st.checkbox("Enable Audio Features", value=False)
+            if enable_audio:
+                speech_rate = st.slider("Speech Rate (WPM)", min_value=50, max_value=300, value=150)
+                speech_volume = st.slider("Volume", min_value=0.0, max_value=1.0, value=0.9, step=0.1)
+            else:
+                speech_rate = 150
+                speech_volume = 0.9
         else:
+            enable_audio = False
             speech_rate = 150
             speech_volume = 0.9
+            st.info("ℹ️ Audio features not available in this environment. Use text input instead.")
 
     with st.form("research_form", clear_on_submit=False):
         user_input = st.text_input(
