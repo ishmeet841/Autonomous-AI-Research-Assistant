@@ -1,6 +1,5 @@
+streamlit>=1.36.0
+requests>=2.25.0
 transformers>=4.0.0
 torch>=1.7.0
-requests>=2.25.0
 wikipedia-api>=0.5.4
-SpeechRecognition>=3.8.1
-pyttsx3>=2.90
