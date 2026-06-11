@@ -9,8 +9,6 @@ import traceback
 from urllib.parse import quote_plus
 
 import streamlit as st
-import speech_recognition as sr
-import pyttsx3
 
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -473,6 +471,13 @@ def render_report(topic: str, report: str) -> None:
 
 def render_audio_interface(backend: dict) -> str | None:
     """Render audio input/output interface and return recognized text or None"""
+    try:
+        import speech_recognition as sr
+        import pyttsx3
+    except ImportError:
+        st.error("❌ Audio libraries not installed. Please install SpeechRecognition and pyttsx3.")
+        return None
+    
     st.subheader("🎙️ Audio Interface")
     col1, col2 = st.columns(2)
     
@@ -560,6 +565,7 @@ def main() -> None:
         # Handle audio input if enabled
         if enable_audio and use_audio_input and not user_input.strip():
             try:
+                import speech_recognition as sr
                 with st.spinner("🎤 Listening for your query..."):
                     recognizer = sr.Recognizer()
                     recognizer.energy_threshold = 4000
@@ -568,6 +574,9 @@ def main() -> None:
                         audio = recognizer.listen(source, timeout=10, phrase_time_limit=10)
                     user_input = recognizer.recognize_google(audio)
                     st.success(f"✅ You said: {user_input}")
+            except ImportError:
+                st.error("❌ SpeechRecognition library not installed. Please install it to use voice input.")
+                return
             except sr.UnknownValueError:
                 st.error("❌ Could not understand audio. Please try typing or try again.")
                 return
@@ -603,12 +612,15 @@ def main() -> None:
             # Speak confirmation if audio enabled
             if enable_audio and results:
                 try:
+                    import pyttsx3
                     engine = pyttsx3.init()
                     engine.setProperty('rate', speech_rate)
                     engine.setProperty('volume', speech_volume)
                     message = f"Research complete. Found {len(results)} sources for {interpreted_topic}."
                     engine.say(message)
                     engine.runAndWait()
+                except ImportError:
+                    pass  # Silently fail if pyttsx3 not available
                 except Exception:
                     pass  # Silently fail audio feedback
         except Exception as exc:
