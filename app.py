@@ -8,13 +8,20 @@ import re
 import traceback
 from urllib.parse import quote_plus
 
+import requests
 import streamlit as st
+import wikipediaapi
 
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 APP_DIR = Path(__file__).resolve().parent
 NOTEBOOK_PATH = APP_DIR / "Autonomous-AI-Research-Assistant.ipynb"
+
+wiki_wiki = wikipediaapi.Wikipedia(
+    language="en",
+    user_agent="AIResearchAssistant/1.0 (your.email@example.com)",
+)
 
 BACKEND_CELL_MARKERS = (
     "wiki_wiki = wikipediaapi.Wikipedia",
@@ -73,29 +80,86 @@ def _source_from_cell(cell: dict) -> str:
     return "\n".join(cleaned_lines)
 
 
+def search_semantic_scholar(query: str, limit: int = 10) -> list[dict]:
+    url = (
+        "https://api.semanticscholar.org/graph/v1/paper/search"
+        f"?query={quote_plus(query)}&limit={limit}&fields=title,abstract,url,authors,year"
+    )
+    response = requests.get(url, timeout=30)
+    if response.status_code == 200:
+        return response.json().get("data", [])
+    return []
+
+
+def retrieve_and_summarize(query: str, limit: int = 10) -> list[dict]:
+    papers = search_semantic_scholar(query, limit)
+    results = []
+    for paper in papers:
+        abstract = paper.get("abstract") or ""
+        summary = abstract[:250] + "..." if len(abstract) > 250 else abstract
+        if not summary:
+            summary = "Abstract not available"
+        results.append(
+            {
+                "title": paper.get("title", "No Title"),
+                "summary": summary,
+                "url": paper.get("url", "URL not available"),
+                "abstract": abstract,
+            }
+        )
+    return results
+
+
+def answer_question(question: str, context: str) -> str:
+    if not context:
+        return "No context available for this paper."
+
+    question_terms = [term for term in re.findall(r"[A-Za-z0-9-]+", question.lower()) if len(term) > 2]
+    context_lower = context.lower()
+    if any(term in context_lower for term in question_terms):
+        return context[:400] + ("..." if len(context) > 400 else "")
+
+    return context[:200] + ("..." if len(context) > 200 else "")
+
+
+def get_wikipedia_summary_and_url(query: str) -> tuple[str | None, str | None]:
+    title = query.strip()
+    page = wiki_wiki.page(title)
+    if not page.exists():
+        search_title = title.split()[-1].capitalize()
+        page = wiki_wiki.page(search_title)
+    if not page.exists():
+        return None, None
+    return page.summary[:1000], page.fullurl
+
+
+def combined_answer(question: str, paper_abstract: str) -> str:
+    answer = answer_question(question, paper_abstract)
+    if (
+        answer.lower() in ["no answer found.", "no context available for this paper.", "", "n/a"]
+        or len(answer) < 15
+        or "www." in answer
+        or ".org" in answer
+        or ".com" in answer
+        or ".net" in answer
+    ):
+        wiki_summary, wiki_url = get_wikipedia_summary_and_url(question)
+        if wiki_summary:
+            return f"Wikipedia Summary:\n{wiki_summary}\n\nRead more at: {wiki_url}"
+        return "Sorry, no answer found in paper or Wikipedia."
+    return f"Paper-based Answer:\n{answer}"
+
+
 @st.cache_resource(show_spinner=False)
 def load_backend() -> dict:
-    if not NOTEBOOK_PATH.exists():
-        raise RuntimeError(f"Backend notebook was not found at {NOTEBOOK_PATH.name}.")
-
-    with NOTEBOOK_PATH.open("r", encoding="utf-8") as notebook_file:
-        notebook = json.load(notebook_file)
-
-    namespace = {"__name__": "research_notebook_backend"}
-    for cell in notebook.get("cells", []):
-        if cell.get("cell_type") != "code":
-            continue
-
-        source = _source_from_cell(cell)
-        if any(marker in source for marker in BACKEND_CELL_MARKERS):
-            exec(source, namespace)
-
-    missing = [name for name in REQUIRED_BACKEND_NAMES if name not in namespace]
-    if missing:
-        missing_names = ", ".join(missing)
-        raise RuntimeError(f"Backend notebook is missing required function(s): {missing_names}.")
-
-    return {name: namespace[name] for name in REQUIRED_BACKEND_NAMES}
+    return {
+        "search_semantic_scholar": search_semantic_scholar,
+        "retrieve_and_summarize": retrieve_and_summarize,
+        "answer_question": answer_question,
+        "combined_answer": combined_answer,
+        "get_wikipedia_summary_and_url": get_wikipedia_summary_and_url,
+        "summarizer": None,
+    }
 
 
 @contextlib.contextmanager
@@ -354,7 +418,7 @@ def run_research(original_input: str, topic: str, limit: int) -> tuple[list[dict
     used_query = topic
 
     with st.status("Research in progress", expanded=True) as status:
-        st.write("Loading notebook backend and model pipelines")
+        st.write("Loading backend functions")
         backend = load_backend()
         progress.progress(20, text="Backend loaded")
 
