@@ -53,13 +53,6 @@ def apply_page_style() -> None:
             font-weight: 650;
         }
 
-        .audio-widget {
-            background-color: #f0f2f6;
-            padding: 1rem;
-            border-radius: 8px;
-            margin: 1rem 0;
-        }
-
         </style>
         """,
         unsafe_allow_html=True,
@@ -458,61 +451,6 @@ def render_report(topic: str, report: str) -> None:
         mime="text/markdown",
         use_container_width=True,
     )
-
-
-def render_audio_interface(backend: dict) -> str | None:
-    """Render audio input/output interface and return recognized text or None"""
-    try:
-        import speech_recognition as sr
-        import pyttsx3
-    except ImportError:
-        st.error("❌ Audio libraries not installed. Please install SpeechRecognition and pyttsx3.")
-        return None
-    
-    st.subheader("🎙️ Audio Interface")
-    col1, col2 = st.columns(2)
-    
-    recognized_text = None
-    with col1:
-        st.markdown("**Audio Input**")
-        if st.button("🎤 Listen for Query", key="listen_btn", help="Click to listen for your research question"):
-            try:
-                with st.spinner("🎧 Listening..."):
-                    recognizer = sr.Recognizer()
-                    recognizer.energy_threshold = 4000
-                    try:
-                        with sr.Microphone() as source:
-                            recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                            audio = recognizer.listen(source, timeout=10, phrase_time_limit=10)
-                        recognized_text = recognizer.recognize_google(audio)
-                        st.success(f"✅ Recognized: **{recognized_text}**")
-                    except sr.UnknownValueError:
-                        st.warning("❌ Could not understand audio. Please try again.")
-                    except sr.RequestError as e:
-                        st.error(f"❌ Speech service error: {e}")
-            except Exception as e:
-                st.error(f"❌ Microphone error: {e}")
-    
-    with col2:
-        st.markdown("**Audio Output**")
-        if st.button("🔊 Speak Last Report", key="speak_btn", help="Convert last report to speech"):
-            last_research = st.session_state.get("last_research")
-            if last_research and last_research.get("report"):
-                try:
-                    with st.spinner("🎵 Generating speech..."):
-                        report_text = last_research["report"][:1000]
-                        engine = pyttsx3.init()
-                        engine.setProperty('rate', 150)
-                        engine.setProperty('volume', 0.9)
-                        engine.say(report_text)
-                        engine.runAndWait()
-                        st.success("✅ Speech completed!")
-                except Exception as e:
-                    st.error(f"❌ Text-to-speech error: {e}")
-            else:
-                st.info("ℹ️ Run a research query first to generate a report.")
-    
-    return recognized_text
 
 
 def main() -> None:
