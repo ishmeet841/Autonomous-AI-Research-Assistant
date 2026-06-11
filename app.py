@@ -9,6 +9,8 @@ import traceback
 from urllib.parse import quote_plus
 
 import streamlit as st
+import speech_recognition as sr
+import pyttsx3
 
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -21,6 +23,8 @@ BACKEND_CELL_MARKERS = (
     "def search_semantic_scholar",
     "def retrieve_and_summarize",
     "def answer_question",
+    "def listen_query",
+    "def speak_text",
 )
 
 REQUIRED_BACKEND_NAMES = (
@@ -30,6 +34,10 @@ REQUIRED_BACKEND_NAMES = (
     "combined_answer",
     "get_wikipedia_summary_and_url",
     "summarizer",
+    "listen_query",
+    "speak_text",
+    "save_audio_response",
+    "get_audio_settings",
 )
 
 
@@ -51,6 +59,13 @@ def apply_page_style() -> None:
         div[data-testid="stDownloadButton"] button {
             border-radius: 8px;
             font-weight: 650;
+        }
+
+        .audio-widget {
+            background-color: #f0f2f6;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
         }
 
         </style>
@@ -456,6 +471,54 @@ def render_report(topic: str, report: str) -> None:
     )
 
 
+def render_audio_interface(backend: dict) -> str | None:
+    """Render audio input/output interface and return recognized text or None"""
+    st.subheader("🎙️ Audio Interface")
+    col1, col2 = st.columns(2)
+    
+    recognized_text = None
+    with col1:
+        st.markdown("**Audio Input**")
+        if st.button("🎤 Listen for Query", key="listen_btn", help="Click to listen for your research question"):
+            try:
+                with st.spinner("🎧 Listening..."):
+                    recognizer = sr.Recognizer()
+                    recognizer.energy_threshold = 4000
+                    try:
+                        with sr.Microphone() as source:
+                            recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                            audio = recognizer.listen(source, timeout=10, phrase_time_limit=10)
+                        recognized_text = recognizer.recognize_google(audio)
+                        st.success(f"✅ Recognized: **{recognized_text}**")
+                    except sr.UnknownValueError:
+                        st.warning("❌ Could not understand audio. Please try again.")
+                    except sr.RequestError as e:
+                        st.error(f"❌ Speech service error: {e}")
+            except Exception as e:
+                st.error(f"❌ Microphone error: {e}")
+    
+    with col2:
+        st.markdown("**Audio Output**")
+        if st.button("🔊 Speak Last Report", key="speak_btn", help="Convert last report to speech"):
+            last_research = st.session_state.get("last_research")
+            if last_research and last_research.get("report"):
+                try:
+                    with st.spinner("🎵 Generating speech..."):
+                        report_text = last_research["report"][:1000]
+                        engine = pyttsx3.init()
+                        engine.setProperty('rate', 150)
+                        engine.setProperty('volume', 0.9)
+                        engine.say(report_text)
+                        engine.runAndWait()
+                        st.success("✅ Speech completed!")
+                except Exception as e:
+                    st.error(f"❌ Text-to-speech error: {e}")
+            else:
+                st.info("ℹ️ Run a research query first to generate a report.")
+    
+    return recognized_text
+
+
 def main() -> None:
     st.set_page_config(
         page_title="Autonomous AI Research Assistant",
@@ -468,15 +531,53 @@ def main() -> None:
     with st.sidebar:
         st.header("Research Settings")
         limit = st.slider("Sources", min_value=1, max_value=10, value=5)
+        
+        st.divider()
+        st.header("⚙️ Audio Settings")
+        enable_audio = st.checkbox("Enable Audio Features", value=False)
+        if enable_audio:
+            speech_rate = st.slider("Speech Rate (WPM)", min_value=50, max_value=300, value=150)
+            speech_volume = st.slider("Volume", min_value=0.0, max_value=1.0, value=0.9, step=0.1)
+        else:
+            speech_rate = 150
+            speech_volume = 0.9
 
     with st.form("research_form", clear_on_submit=False):
         user_input = st.text_input(
             "Research topic or question",
             placeholder="Example: how can AI tools help with systematic literature reviews?",
         )
-        submitted = st.form_submit_button("Start Research", type="primary", use_container_width=True)
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            submitted = st.form_submit_button("Start Research", type="primary", use_container_width=True)
+        with col2:
+            if enable_audio:
+                use_audio_input = st.form_submit_button("🎤 Voice Input", use_container_width=True)
+            else:
+                use_audio_input = False
 
-    if submitted:
+    if submitted or (enable_audio and use_audio_input):
+        # Handle audio input if enabled
+        if enable_audio and use_audio_input and not user_input.strip():
+            try:
+                with st.spinner("🎤 Listening for your query..."):
+                    recognizer = sr.Recognizer()
+                    recognizer.energy_threshold = 4000
+                    with sr.Microphone() as source:
+                        recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                        audio = recognizer.listen(source, timeout=10, phrase_time_limit=10)
+                    user_input = recognizer.recognize_google(audio)
+                    st.success(f"✅ You said: {user_input}")
+            except sr.UnknownValueError:
+                st.error("❌ Could not understand audio. Please try typing or try again.")
+                return
+            except sr.RequestError as e:
+                st.error(f"❌ Speech service error: {e}")
+                return
+            except Exception as e:
+                st.error(f"❌ Microphone error: {e}")
+                return
+        
         normalized_input = user_input.strip()
         interpreted_topic = interpret_user_input(normalized_input)
         if not interpreted_topic:
@@ -498,6 +599,18 @@ def main() -> None:
                 "tried_queries": tried_queries,
                 "used_query": used_query,
             }
+            
+            # Speak confirmation if audio enabled
+            if enable_audio and results:
+                try:
+                    engine = pyttsx3.init()
+                    engine.setProperty('rate', speech_rate)
+                    engine.setProperty('volume', speech_volume)
+                    message = f"Research complete. Found {len(results)} sources for {interpreted_topic}."
+                    engine.say(message)
+                    engine.runAndWait()
+                except Exception:
+                    pass  # Silently fail audio feedback
         except Exception as exc:
             st.error("Research could not be completed.")
             st.info(str(exc))
@@ -526,6 +639,13 @@ def main() -> None:
         if last_research.get("logs"):
             with st.expander("Backend Logs", expanded=not last_research["results"]):
                 st.code(last_research["logs"])
+        
+        # Render audio interface if enabled
+        if enable_audio:
+            st.divider()
+            audio_input = render_audio_interface(backend=load_backend())
+            if audio_input:
+                st.info(f"💡 Tip: You can use the audio input for follow-up research on: {audio_input}")
 
 
 if __name__ == "__main__":
