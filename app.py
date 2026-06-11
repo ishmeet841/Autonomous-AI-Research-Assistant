@@ -275,28 +275,11 @@ def generate_overview(topic: str, results: list[dict], backend: dict) -> str:
 
     if not summaries:
         return (
-            f"The search returned sources for {topic}, but their abstracts were not available "
-            "for summarization."
+            f"The search returned sources for {topic}, but their abstracts were not available."
         )
 
-    combined = "\n".join(summaries)
-    
-    if backend["summarizer"] is None:
-        return " ".join(summaries[:2])
-
-    try:
-        synthesis = backend["summarizer"](
-            f"summarize: {combined[:1000]}",
-            max_length=220,
-            min_length=60,
-        )
-        overview = synthesis[0].get("generated_text", "").strip()
-        if overview:
-            return overview
-    except Exception:
-        pass
-
-    return " ".join(summaries[:2])
+    # Just combine the available summaries
+    return " ".join(summaries[:3])
 
 
 def build_report(
